@@ -48,6 +48,7 @@ parser.add_argument("-c", "--compression", action=argparse.BooleanOptionalAction
 parser.add_argument("-q", "--query-only", action=argparse.BooleanOptionalAction)
 parser.add_argument("-o", "--override", action=argparse.BooleanOptionalAction)
 parser.add_argument("-s", "--dim-to-segment-ratio")
+parser.add_argument("-i", "--insert-many", action=argparse.BooleanOptionalAction)
 args = parser.parse_args()
 
 
@@ -75,6 +76,7 @@ if (args.labels) != None:
 
 values["compression"] = args.compression or False
 values["override"] = args.override or False
+values["insert_many"] = args.insert_many or False
 values["query_only"] = args.query_only
 if (args.dim_to_segment_ratio) != None:
     values["dim_to_segment_ratio"] = int(args.dim_to_segment_ratio)
@@ -100,7 +102,7 @@ for shards in values["shards"]:
             )
             if override == False:
                 reset_schema(client, efC, m, shards, distance)
-            load_records(client, vectors, compression, dim_to_seg_ratio, override)
+            load_records(client, vectors, compression, dim_to_seg_ratio, override, insert_many=values["insert_many"])
             elapsed = time.time() - before_import
             logger.info(
                 f"Finished import with efC={efC}, m={m}, shards={shards} in {str(timedelta(seconds=elapsed))}"

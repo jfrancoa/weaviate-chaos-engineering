@@ -7,6 +7,7 @@ import weaviate
 import weaviate.classes.config as wvc
 import h5py
 import time
+from weaviate.collections.classes.data import DataObject
 
 class_name = "Vector"
 
@@ -33,7 +34,7 @@ def reset_schema(client: weaviate.WeaviateClient, efC, m, shards, distance):
     )
 
 
-def load_records(client: weaviate.WeaviateClient, vectors, compression, dim_to_seg_ratio, override):
+def load_records(client: weaviate.WeaviateClient, vectors, compression, dim_to_seg_ratio, override, insert_many=False):
     collection = client.collections.get(class_name)
     i = 0
     if vectors == None:
@@ -41,25 +42,40 @@ def load_records(client: weaviate.WeaviateClient, vectors, compression, dim_to_s
     batch_size = 1000
     len_objects = len(vectors)
 
-    with client.batch.fixed_size(batch_size=batch_size) as batch:
-        for vector in vectors:
+    if insert_many:
+        for i in range(0, len_objects, batch_size):
             if i == 100000 and compression == True and override == False:
-                logger.info(f"pausing import to enable compression")
-                break
-
+                    logger.info(f"pausing import to enable compression")
+                    break
             if i % 10000 == 0:
                 logger.info(f"writing record {i}/{len_objects}")
+            batch_vectors = vectors[i:i+batch_size]
+            batch_data_objects = [
+                DataObject(properties={"i": i+idx}, vector=vector, uuid=uuid.UUID(int=i+idx))
+                for idx, vector in enumerate(batch_vectors)
+            ]
+            collection.data.insert_many(batch_data_objects)
 
-            data_object = {
-                "i": i,
-            }
-            batch.add_object(
-                properties=data_object,
-                vector=vector,
-                collection=class_name,
-                uuid=uuid.UUID(int=i),
-            )
-            i += 1
+    else:
+        with client.batch.fixed_size(batch_size=batch_size) as batch:
+            for vector in vectors:
+                if i == 100000 and compression == True and override == False:
+                    logger.info(f"pausing import to enable compression")
+                    break
+
+                if i % 10000 == 0:
+                    logger.info(f"writing record {i}/{len_objects}")
+
+                data_object = {
+                    "i": i,
+                }
+                batch.add_object(
+                    properties=data_object,
+                    vector=vector,
+                    collection=class_name,
+                    uuid=uuid.UUID(int=i),
+                )
+                i += 1
 
     for err in client.batch.failed_objects:
         logger.error(err.message)
