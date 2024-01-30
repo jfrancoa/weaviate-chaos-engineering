@@ -8,14 +8,18 @@ import weaviate.classes.config as wvc
 import h5py
 import time
 from weaviate.collections.classes.data import DataObject
+from weaviate.collections.classes.tenants import Tenant
 
 class_name = "Vector"
+tenants = 9
 
 
 def reset_schema(client: weaviate.WeaviateClient, efC, m, shards, distance):
     client.collections.delete_all()
     client.collections.create(
         name=class_name,
+        multi_tenancy_config=wvc.Configure.multi_tenancy(enabled=True),
+        replication_config=wvc.Configure.replication(factor=1),
         vectorizer_config=wvc.Configure.Vectorizer.none(),
         vector_index_config=wvc.Configure.VectorIndex.hnsw(
             ef_construction=efC,
@@ -30,8 +34,11 @@ def reset_schema(client: weaviate.WeaviateClient, efC, m, shards, distance):
             )
         ],
         inverted_index_config=wvc.Configure.inverted_index(index_timestamps=False),
-        sharding_config=wvc.Configure.sharding(desired_count=shards),
+        #sharding_config=wvc.Configure.sharding(desired_count=shards),
     )
+    for i in range(tenants):
+        client.collections.get(class_name).tenants.create([Tenant(name=f"tenant{i}")])
+    
 
 
 def load_records(client: weaviate.WeaviateClient, vectors, compression, dim_to_seg_ratio, override, insert_many=False):
@@ -40,42 +47,53 @@ def load_records(client: weaviate.WeaviateClient, vectors, compression, dim_to_s
     if vectors == None:
         vectors = [None] * 10_000_000
     batch_size = 1000
+<<<<<<< HEAD
     len_objects = len(vectors)
 
+=======
+    #len_objects = len(vectors)
+    len_objects = 100_000
+    
+>>>>>>> 27f8909 (DNM: Playing with ann-benchamark and python 4 client)
     if insert_many:
         for i in range(0, len_objects, batch_size):
-            if i == 100000 and compression == True and override == False:
-                    logger.info(f"pausing import to enable compression")
-                    break
-            if i % 10000 == 0:
-                logger.info(f"writing record {i}/{len_objects}")
-            batch_vectors = vectors[i:i+batch_size]
-            batch_data_objects = [
-                DataObject(properties={"i": i+idx}, vector=vector, uuid=uuid.UUID(int=i+idx))
-                for idx, vector in enumerate(batch_vectors)
-            ]
-            collection.data.insert_many(batch_data_objects)
+            for tenant in range(tenants):
+                if i == 100000 and compression == True and override == False:
+                        logger.info(f"pausing import to enable compression")
+                        break
+                if i % 10000 == 0:
+                    logger.info(f"writing record {i+batch_size}/{len_objects}")
+                batch_vectors = vectors[i:i+batch_size]
+                batch_data_objects = [
+                    DataObject(properties={"i": i+idx}, vector=vector, uuid=uuid.UUID(int=i+idx))
+                    for idx, vector in enumerate(batch_vectors)
+                ]
+                collection.with_tenant(f"tenant{tenant}").data.insert_many(batch_data_objects)
 
     else:
-        with client.batch.fixed_size(batch_size=batch_size) as batch:
-            for vector in vectors:
-                if i == 100000 and compression == True and override == False:
-                    logger.info(f"pausing import to enable compression")
-                    break
+        
+        
+        for tenant in range(tenants):
+            with client.batch.fixed_size(batch_size=batch_size) as batch:
+                for vector in vectors[:len_objects]:
+                    if i == 100000 and compression == True and override == False:
+                        logger.info(f"pausing import to enable compression")
+                        break
 
-                if i % 10000 == 0:
-                    logger.info(f"writing record {i}/{len_objects}")
+                    if i % 10000 == 0:
+                        logger.info(f"writing record {i}/{len_objects}")
 
-                data_object = {
-                    "i": i,
-                }
-                batch.add_object(
-                    properties=data_object,
-                    vector=vector,
-                    collection=class_name,
-                    uuid=uuid.UUID(int=i),
-                )
-                i += 1
+                    data_object = {
+                        "i": i,
+                    }
+                    batch.add_object(
+                        properties=data_object,
+                        vector=vector,
+                        collection=class_name,
+                        tenant=f"tenant{tenant}",
+                        uuid=uuid.UUID(int=i),
+                    )
+                    i += 1
 
     for err in client.batch.failed_objects:
         logger.error(err.message)
@@ -92,28 +110,34 @@ def load_records(client: weaviate.WeaviateClient, vectors, compression, dim_to_s
         wait_for_all_shards_ready(collection)
 
         i = 100000
-        with client.batch.fixed_size(batch_size=batch_size) as batch:
-            while i < len_objects:
-                vector = vectors[i]
-                if i % 10000 == 0:
-                    logger.info(f"writing record {i}/{len_objects}")
+        for tenant in range(tenants):
+            with client.batch.fixed_size(batch_size=batch_size) as batch:
+                while i < len_objects:
+                    vector = vectors[i]
+                    if i % 10000 == 0:
+                        logger.info(f"writing record {i}/{len_objects}")
 
-                data_object = {
-                    "i": i,
-                }
+                    data_object = {
+                        "i": i,
+                    }
 
-                batch.add_object(
-                    properties=data_object,
-                    vector=vector,
-                    collection=class_name,
-                    uuid=uuid.UUID(int=i),
-                )
-                i += 1
+                    batch.add_object(
+                        properties=data_object,
+                        vector=vector,
+                        collection=class_name,
+                        tenant=f"tenant{tenant}",
+                        uuid=uuid.UUID(int=i),
+                    )
+                    i += 1
 
         for err in client.batch.failed_objects:
             logger.error(err.message)
 
     logger.info(f"Finished writing {len_objects} records")
+    
+    logger.info(f"Increasing replication factor to 3")
+    collection.config.update(replication_config=wvc.Reconfigure.replication(factor=3))
+    
 
 
 def wait_for_all_shards_ready(collection: weaviate.collections.Collection):
