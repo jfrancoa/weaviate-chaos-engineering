@@ -13,7 +13,8 @@ from weaviate_pprof import obtain_heap_profile
 
 limit = 10
 class_name = "Vector"
-tenants = 3
+num_tenants_query = 50
+queries = 1000
 results = []
 
 
@@ -39,17 +40,18 @@ def search_grpc(collection: weaviate.collections.Collection, dataset, i, input_v
 
 def query(client: weaviate.WeaviateClient, stub, dataset, ef_values, labels):
     collection = client.collections.get(class_name)
+    tenants_to_query = list(client.collections.get(class_name).tenants.get().keys())[:num_tenants_query]
     schema = collection.config.get()
     shards = schema.sharding_config.actual_count
     efC = schema.vector_index_config.ef_construction
     m = schema.vector_index_config.max_connections
     logger.info(f"build params: shards={shards}, efC={efC}, m={m} labels={labels}")
 
-    vectors = dataset["test"]
+    vectors = dataset["test"][:queries]
     run_id = f"{int(time.time())}"
 
     for ef in ef_values:
-        for tenant in range(tenants):
+        for tenant in tenants_to_query:
             for api in ["grpc"]:
                 collection.config.update(vector_index_config=wvc.Reconfigure.VectorIndex.hnsw(ef=ef))
 
@@ -58,7 +60,7 @@ def query(client: weaviate.WeaviateClient, stub, dataset, ef_values, labels):
                 for i, vec in enumerate(vectors):
                     res = {}
                     if api == "grpc":
-                        res = search_grpc(collection.with_tenant(f"tenant{tenant}"), dataset, i, list(vec))
+                        res = search_grpc(collection.with_tenant(tenant), dataset, i, list(vec))
                     elif api == "grpc_clientless":
                         res = search_grpc_clientless(stub, dataset, i, vec)
                     elif api == "graphql":
