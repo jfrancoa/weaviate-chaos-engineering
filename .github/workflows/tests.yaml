@@ -4,17 +4,15 @@ env:
   WEAVIATE_VERSION: ${{ github.event.inputs.weaviate_version || '1.24.0' }}
   MINIMUM_WEAVIATE_VERSION: 1.15.0 # this is used as the start in the upgrade journey test
 on:
-  workflow_dispatch:
-    inputs:
-       weaviate_version:
-         description: 'Weaviate version (pass only the tag)'
-         required: true
-         default: '1.24.0'
   workflow_call:
     inputs:
       lsm_access_strategy:
         required: true
         type: string
+      weaviate_version:
+        description: 'Weaviate version to test'
+        type: string
+        required: false
     secrets:
       AWS_ACCESS_KEY:
         required: true
