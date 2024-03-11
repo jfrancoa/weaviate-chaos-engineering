@@ -21,7 +21,7 @@ jobs:
     uses: ./.github/workflows/tests.yaml
     with:
       lsm_access_strategy: ${{matrix.lsm_access_strategy}}
-      weaviate_version: ${{ github.event.inputs.weaviate_version || '1.24.0' }}
+      weaviate_version: ${{ github.event.inputs.weaviate_version }}
     secrets:
       AWS_ACCESS_KEY: ${{secrets.AWS_ACCESS_KEY}}
       AWS_SECRET_ACCESS_KEY: ${{secrets.AWS_SECRET_ACCESS_KEY}}
